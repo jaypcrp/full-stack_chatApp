@@ -1,0 +1,45 @@
+When Docker installs on your machine, it creates a virtual network interface called docker0 on your host.
+
+
+Your Host Machine
+├── eth0  (your real network card, IP: 192.168.1.10)
+└── docker0  (virtual bridge created by Docker, IP: 172.17.0.1)
+
+docker0 is a bridge — think of it as a virtual network switch that only exists in software. When you docker run a container manually without any network flags:
+
+
+docker run nginx          # container 1
+docker run redis          # container 2
+Both containers get plugged into docker0:
+
+
+docker0 (172.17.0.1)
+   ├── container1  →  172.17.0.2
+   └── container2  →  172.17.0.3
+Docker assigns each container its own IP from a private subnet (172.17.0.x). The host itself is 172.17.0.1. These are completely separate IPs — no collision — because Docker manages a virtual IP space, not your real network.
+
+But here's the problem with this default setup: containers don't know each other's names. You'd have to hardcode 172.17.0.2 to reach container1. If it restarts, IP might change. This is fragile.
+
+
+
+What Compose Does Differently: A Custom Bridge Network
+Look at the bottom of your docker-compose.yml:38-40:
+
+
+networks:
+  fullstack-chatapp:
+    driver: bridge
+Compose creates a new, isolated bridge network specifically for your app — it does NOT use the default docker0. Call it a dedicated virtual switch just for your 3 containers.
+
+
+Your Host Machine
+├── eth0            (your real NIC)
+├── docker0         (Docker's default bridge — not used here)
+└── br-a1b2c3d4e5  (the "fullstack-chatapp" bridge — created by Compose)
+         ├── mongodb   →  172.20.0.2
+         ├── backend   →  172.20.0.3
+         └── frontend  →  172.20.0.4
+The subnet (172.20.x.x) is picked automatically by Docker. Each container gets its own IP in that subnet. They're all different, and they can all reach each other because they're on the same virtual switch.
+
+Key point: Multiple containers on the same host never share an IP. Docker manages a private virtual subnet — each container gets a unique IP within it, just like devices on a LAN.
+
